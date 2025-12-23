@@ -14,6 +14,25 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             break;
         case ETHERTYPE_ARP:
             printf("ARP packet\n");
+            const u_char* arpHeader = packet + sizeof(struct ether_header);
+
+            uint16_t* hardwareType = arpHeader;
+            uint16_t* protoType = arpHeader + 2;
+            uint16_t* lengths = arpHeader + 4;
+            uint16_t* op = arpHeader + 6;
+
+            uint8_t* senderMAC = arpHeader + 8;
+            uint8_t* senderIP = arpHeader + 14;
+            uint8_t* targetMAC = arpHeader + 18;
+            uint8_t* targetIP = arpHeader + 24;
+
+            printf("\tOperation: %s\n", ((*op == 1) ? "request" : "reply"));
+            printf("\tSender hardware address: %2X:%02X:%02X:%02X:%02X:%02X\n", senderMAC[0], senderMAC[1], senderMAC[2],
+                                                            senderMAC[3], senderMAC[4], senderMAC[5]);
+            printf("\tTarget hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", targetMAC[0], targetMAC[1], targetMAC[2],
+                                                            targetMAC[3], targetMAC[4], targetMAC[5]);
+            printf("\tSender protocol address: %d.%d.%d.%d\n", senderIP[0], senderIP[1], senderIP[2], senderIP[3]);
+            printf("\tTarget protocol address: %d.%d.%d.%d\n", targetIP[0], targetIP[1], targetIP[2], targetIP[3]);
             break;
         case ETHERTYPE_REVARP:
             printf("Reverse ARP packet\n");
