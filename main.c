@@ -11,7 +11,9 @@
 #include <arpa/inet.h>
 
 char* device; //, *defaultGW;
-uint32_t gateway_net;
+uint32_t gateway_net = NULL;
+uint8_t gateway_mac[6];
+int gwKnown = 0;
 
 void getDG(uint32_t* res){
     FILE *f = fopen("/proc/net/route", "r");
@@ -25,7 +27,7 @@ void getDG(uint32_t* res){
         if(sscanf(line, "%31s %lx %lx", interface, &destination, &gateway) != 3) continue;
         
         if(strcmp(device, interface) == 0 && destination == 0){ //!(strcmp(device, interface) || destination)){
-            *res = htonl(gateway);
+            *res = gateway; //htonl(gateway);
             //res = malloc(INET_ADDRSTRLEN);
             // struct in_addr dg;
             // dg.s_addr = htonl(gateway); //gateway;
@@ -45,7 +47,7 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
     uint16_t frameType = ntohs(ethHeader->ether_type);
     switch(frameType){
         case ETHERTYPE_IP:
-            printf("IP packet\n");
+            // printf("IP packet\n");
             break;
         case ETHERTYPE_ARP:
             printf("ARP packet\n");
@@ -68,8 +70,32 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             struct in_addr arp_sender_addr;
             memcpy(&arp_sender_addr.s_addr, senderIP, 4);
 
+            if (memcmp(senderMAC, ethHeader->ether_shost, 6) != 0) {
+                printf("[ALERT] ARP/Ethernet MAC mismatch\n");
+            }
+
             if (arp_sender_addr.s_addr == gateway_net){
-                printf("[ALERT][ARP] Gateway MAC address is changed");
+                printf("[ARP] Received gateway MAC address\n");
+                if(!gwKnown){
+                    memcpy(gateway_mac, ethHeader->ether_shost, 6);
+                    // gateway_mac = *(uint_t*)ethHeader->ether_shost;
+                    gwKnown = 1;
+                }
+                else if(memcmp(gateway_mac, ethHeader->ether_shost, 6)) {
+                    printf("[ALERT] Gateway MAC address changed");
+
+                    printf("Old MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                        gateway_mac[0], gateway_mac[1], gateway_mac[2],
+                        gateway_mac[3], gateway_mac[4], gateway_mac[5]);
+
+                    printf("New MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                        ethHeader->ether_shost[0], ethHeader->ether_shost[1],
+                        ethHeader->ether_shost[2], ethHeader->ether_shost[3],
+                        ethHeader->ether_shost[4], ethHeader->ether_shost[5]);  
+
+                    memcpy(gateway_mac, ethHeader->ether_shost, 6);
+                    // gateway_mac = *(uint64_t*)ethHeader->ether_shost;
+                }
             }
 
             printf("\tOperation: %s\n", ((ntohs(*op) == ARPOP_REQUEST) ? "request" : "reply"));
@@ -81,18 +107,18 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             printf("\tTarget protocol address: %d.%d.%d.%d\n", targetIP[0], targetIP[1], targetIP[2], targetIP[3]);
             break;
         case ETHERTYPE_REVARP:
-            printf("Reverse ARP packet\n");
+            // printf("Reverse ARP packet\n");
             break;
         default:
             printf("Unknown packet\n");
             break;
     }
 
-    printf("\tHeader length: %d\n", header->len);
-    printf("\tDestination: %2X:%02X:%02X:%02X:%02X:%02X\n", ethHeader->ether_dhost[0], ethHeader->ether_dhost[1], ethHeader->ether_dhost[2],
-                                                            ethHeader->ether_dhost[3], ethHeader->ether_dhost[4], ethHeader->ether_dhost[5]);
-    printf("\tSource: %02X:%02X:%02X:%02X:%02X:%02X\n", ethHeader->ether_shost[0], ethHeader->ether_shost[1], ethHeader->ether_shost[2],
-                                                            ethHeader->ether_shost[3], ethHeader->ether_shost[4], ethHeader->ether_shost[5]);
+    // printf("\tHeader length: %d\n", header->len);
+    // printf("\tDestination: %2X:%02X:%02X:%02X:%02X:%02X\n", ethHeader->ether_dhost[0], ethHeader->ether_dhost[1], ethHeader->ether_dhost[2],
+    //                                                         ethHeader->ether_dhost[3], ethHeader->ether_dhost[4], ethHeader->ether_dhost[5]);
+    // printf("\tSource: %02X:%02X:%02X:%02X:%02X:%02X\n", ethHeader->ether_shost[0], ethHeader->ether_shost[1], ethHeader->ether_shost[2],
+    //                                                         ethHeader->ether_shost[3], ethHeader->ether_shost[4], ethHeader->ether_shost[5]);
 }
 
 int main(){
