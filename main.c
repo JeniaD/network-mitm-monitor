@@ -10,7 +10,7 @@
 
 #include <arpa/inet.h>
 
-char* device; //, *defaultGW;
+char* device;
 uint32_t gateway_net = NULL;
 uint8_t gateway_mac[6];
 uint8_t gatewayTTL = 0;
@@ -18,8 +18,8 @@ int gwKnown = 0;
 
 void getDG(uint32_t* res){
     FILE *f = fopen("/proc/net/route", "r");
-    if (!f) return; // NULL;
-    char line[256]; //char* res = NULL;
+    if (!f) return;
+    char line[256];
 
     fgets(line, sizeof(line), f);
     while(fgets(line, sizeof(line), f)){
@@ -27,20 +27,13 @@ void getDG(uint32_t* res){
 
         if(sscanf(line, "%31s %lx %lx", interface, &destination, &gateway) != 3) continue;
         
-        if(strcmp(device, interface) == 0 && destination == 0){ //!(strcmp(device, interface) || destination)){
+        if(strcmp(device, interface) == 0 && destination == 0){
             *res = gateway; //htonl(gateway);
-            //res = malloc(INET_ADDRSTRLEN);
-            // struct in_addr dg;
-            // dg.s_addr = htonl(gateway); //gateway;
-            // strncpy(res, inet_ntoa(dg), INET_ADDRSTRLEN);
-            // res[INET_ADDRSTRLEN-1] = '\0';
-            //inet_ntop(AF_INET, &dg, res, INET_ADDRSTRLEN);
             break;
         }
     }
 
     fclose(f);
-    //return res;
 }
 
 void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packet){
@@ -48,8 +41,7 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
     uint16_t frameType = ntohs(ethHeader->ether_type);
     switch(frameType){
         case ETHERTYPE_IP:
-            // Check DHCP and DNS packets here
-            printf("IP packet\n");
+            // printf("IP packet\n");
             const u_char* ipHeader = packet + sizeof(struct ether_header);
 
             uint8_t version = ipHeader[0] >> 4;
@@ -63,14 +55,11 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             uint32_t gateway_net_be = htonl(gateway_net); // quick fix
             if(gwKnown && !memcmp(ethHeader->ether_shost, gateway_mac, 6) && !memcmp(sourceIP, &gateway_net_be, 4)) {
                 if(gatewayTTL <= 0) gatewayTTL = *ttl;
-                else if(*ttl != gatewayTTL){//memcmp(ttl, &gatewayTTL, 1)){
+                else if(*ttl != gatewayTTL){
                     gatewayTTL = *ttl;
                     printf("[ALERT] TTL value from gateway changed");
                 }
             }
-
-            // should check here if its IPv4
-            // and continue to DNS and DHCP
             
             if (ipHeader[9] != IPPROTO_UDP) return;
             const uint8_t *udp = ipHeader + ihl;
@@ -82,7 +71,7 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
                 // DNS
                 if (src_port == 53)
                     if (memcmp(ethHeader->ether_shost, gateway_mac, 6) != 0){
-                        printf("[ALERT][DNS] Rogue DNS detected\n");
+                        printf("[ALERT][DNS] Possible rogue DNS detected\n");
                         printf("Gateway MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
                             gateway_mac[0], gateway_mac[1], gateway_mac[2],
                             gateway_mac[3], gateway_mac[4], gateway_mac[5]);
@@ -94,12 +83,12 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
                 // DHCP
                 if ((src_port == 67 && dst_port == 68) || (src_port == 68 && dst_port == 67))
                     if (memcmp(ethHeader->ether_shost, gateway_mac, 6) != 0)
-                        printf("[ALERT][DHCP] Rogue DHCP detected\n");
+                        printf("[ALERT][DHCP] Possible rogue DHCP detected\n");
             }
 
             break;
         case ETHERTYPE_ARP:
-            printf("ARP packet\n");
+            // printf("ARP packet\n");
             if (header->len < sizeof(struct ether_header) + 28) return;
 
             const u_char* arpHeader = packet + sizeof(struct ether_header);
@@ -127,7 +116,6 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
                 printf("[ARP] Received gateway MAC address\n");
                 if(!gwKnown){
                     memcpy(gateway_mac, ethHeader->ether_shost, 6);
-                    // gateway_mac = *(uint_t*)ethHeader->ether_shost;
                     gwKnown = 1;
                 }
                 else if(memcmp(gateway_mac, ethHeader->ether_shost, 6)) {
@@ -143,23 +131,22 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
                         ethHeader->ether_shost[4], ethHeader->ether_shost[5]);  
 
                     memcpy(gateway_mac, ethHeader->ether_shost, 6);
-                    // gateway_mac = *(uint64_t*)ethHeader->ether_shost;
                 }
             }
 
-            printf("\tOperation: %s\n", ((ntohs(*op) == ARPOP_REQUEST) ? "request" : "reply"));
-            printf("\tSender hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", senderMAC[0], senderMAC[1], senderMAC[2],
-                                                            senderMAC[3], senderMAC[4], senderMAC[5]);
-            printf("\tTarget hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", targetMAC[0], targetMAC[1], targetMAC[2],
-                                                            targetMAC[3], targetMAC[4], targetMAC[5]);
-            printf("\tSender protocol address: %d.%d.%d.%d\n", senderIP[0], senderIP[1], senderIP[2], senderIP[3]);
-            printf("\tTarget protocol address: %d.%d.%d.%d\n", targetIP[0], targetIP[1], targetIP[2], targetIP[3]);
+            // printf("\tOperation: %s\n", ((ntohs(*op) == ARPOP_REQUEST) ? "request" : "reply"));
+            // printf("\tSender hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", senderMAC[0], senderMAC[1], senderMAC[2],
+            //                                                 senderMAC[3], senderMAC[4], senderMAC[5]);
+            // printf("\tTarget hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", targetMAC[0], targetMAC[1], targetMAC[2],
+            //                                                 targetMAC[3], targetMAC[4], targetMAC[5]);
+            // printf("\tSender protocol address: %d.%d.%d.%d\n", senderIP[0], senderIP[1], senderIP[2], senderIP[3]);
+            // printf("\tTarget protocol address: %d.%d.%d.%d\n", targetIP[0], targetIP[1], targetIP[2], targetIP[3]);
             break;
         case ETHERTYPE_REVARP:
-            printf("Reverse ARP packet\n");
+            // printf("Reverse ARP packet\n");
             break;
         default:
-            printf("Unknown packet\n");
+            // printf("Unknown packet\n");
             break;
     }
 
@@ -171,16 +158,13 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
 }
 
 int main(){
-    // char* device;
     char error_buff[PCAP_ERRBUF_SIZE];
-    // defaultGW = malloc(INET_ADDRSTRLEN);
 
     device = pcap_lookupdev(error_buff);
     if(!device) return 1;
     printf("Using network device: %s\n", device);
 
     getDG(&gateway_net);
-    // printf("Default gateway: %s\n", defaultGW);
 
     pcap_t* handle;
     handle = pcap_open_live(device, BUFSIZ, 0, 10000, error_buff);
