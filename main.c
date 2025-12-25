@@ -13,6 +13,7 @@
 char* device; //, *defaultGW;
 uint32_t gateway_net = NULL;
 uint8_t gateway_mac[6];
+uint8_t gatewayTTL = 0;
 int gwKnown = 0;
 
 void getDG(uint32_t* res){
@@ -47,7 +48,55 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
     uint16_t frameType = ntohs(ethHeader->ether_type);
     switch(frameType){
         case ETHERTYPE_IP:
-            // printf("IP packet\n");
+            // Check DHCP and DNS packets here
+            printf("IP packet\n");
+            const u_char* ipHeader = packet + sizeof(struct ether_header);
+
+            uint8_t version = ipHeader[0] >> 4;
+            uint8_t ihl = (ipHeader[0] & 0x0F) * 4;
+
+            if (version != 4) return; // ignore IPv6
+            if (header->len < sizeof(struct ether_header) + ihl + 8) return;
+
+            uint8_t* ttl = ipHeader + 8;
+            uint8_t* sourceIP = ipHeader + 12;
+            uint32_t gateway_net_be = htonl(gateway_net); // quick fix
+            if(gwKnown && !memcmp(ethHeader->ether_shost, gateway_mac, 6) && !memcmp(sourceIP, &gateway_net_be, 4)) {
+                if(gatewayTTL <= 0) gatewayTTL = *ttl;
+                else if(*ttl != gatewayTTL){//memcmp(ttl, &gatewayTTL, 1)){
+                    gatewayTTL = *ttl;
+                    printf("[ALERT] TTL value from gateway changed");
+                }
+            }
+
+            // should check here if its IPv4
+            // and continue to DNS and DHCP
+            
+            if (ipHeader[9] != IPPROTO_UDP) return;
+            const uint8_t *udp = ipHeader + ihl;
+
+            uint16_t src_port = ntohs(*(uint16_t*)udp);
+            uint16_t dst_port = ntohs(*(uint16_t*)(udp + 2));
+
+            if(gwKnown){
+                // DNS
+                if (src_port == 53)
+                    if (memcmp(ethHeader->ether_shost, gateway_mac, 6) != 0){
+                        printf("[ALERT][DNS] Rogue DNS detected\n");
+                        printf("Gateway MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                            gateway_mac[0], gateway_mac[1], gateway_mac[2],
+                            gateway_mac[3], gateway_mac[4], gateway_mac[5]);
+                        printf("ETH header MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                            ethHeader->ether_shost[0], ethHeader->ether_shost[1], ethHeader->ether_shost[2],
+                            ethHeader->ether_shost[3], ethHeader->ether_shost[4], ethHeader->ether_shost[5]);
+                    }
+
+                // DHCP
+                if ((src_port == 67 && dst_port == 68) || (src_port == 68 && dst_port == 67))
+                    if (memcmp(ethHeader->ether_shost, gateway_mac, 6) != 0)
+                        printf("[ALERT][DHCP] Rogue DHCP detected\n");
+            }
+
             break;
         case ETHERTYPE_ARP:
             printf("ARP packet\n");
@@ -99,7 +148,7 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             }
 
             printf("\tOperation: %s\n", ((ntohs(*op) == ARPOP_REQUEST) ? "request" : "reply"));
-            printf("\tSender hardware address: %2X:%02X:%02X:%02X:%02X:%02X\n", senderMAC[0], senderMAC[1], senderMAC[2],
+            printf("\tSender hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", senderMAC[0], senderMAC[1], senderMAC[2],
                                                             senderMAC[3], senderMAC[4], senderMAC[5]);
             printf("\tTarget hardware address: %02X:%02X:%02X:%02X:%02X:%02X\n", targetMAC[0], targetMAC[1], targetMAC[2],
                                                             targetMAC[3], targetMAC[4], targetMAC[5]);
@@ -107,7 +156,7 @@ void handler(u_char* args, const struct pcap_pkthdr* header, const u_char* packe
             printf("\tTarget protocol address: %d.%d.%d.%d\n", targetIP[0], targetIP[1], targetIP[2], targetIP[3]);
             break;
         case ETHERTYPE_REVARP:
-            // printf("Reverse ARP packet\n");
+            printf("Reverse ARP packet\n");
             break;
         default:
             printf("Unknown packet\n");
